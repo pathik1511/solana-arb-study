@@ -1,0 +1,3 @@
+# Stage 1 (arb_bot.py, live_scanner.py): no dependencies — pure standard library.
+# Stage 2 (stage2_devnet_bot.py): needs solders for keypair + transaction signing.
+solders>=0.21
