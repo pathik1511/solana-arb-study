@@ -37,6 +37,7 @@ import base64
 import http.client
 import json
 import os
+import statistics
 import threading
 import time
 import urllib.parse
@@ -68,6 +69,8 @@ class FastRpc:
         self.host = u.hostname
         self.port = u.port or 443
         self.path = u.path or "/"
+        if u.query:                       # keep ?api-key=... etc (e.g. Helius)
+            self.path += "?" + u.query
         self._lock = threading.Lock()
         self._conn: http.client.HTTPSConnection | None = None
 
@@ -97,7 +100,15 @@ class FastRpc:
                         raise
 
     def balance(self, pubkey) -> int:
-        return self.call("getBalance", [str(pubkey)])["result"]["value"]
+        resp = self.call("getBalance", [str(pubkey)])
+        if "result" not in resp:
+            raise SystemExit(
+                f"RPC at {self.host} returned no result: {resp.get('error')}\n"
+                "If you passed --rpc, the URL or API key is likely wrong "
+                "(note: a Helius API key is NOT your wallet address).\n"
+                "Omit --rpc to use the default devnet RPC."
+            )
+        return resp["result"]["value"]
 
 
 # --------------------------------------------------------------------------- #
@@ -176,11 +187,15 @@ def best_gap(usd=20.0):
 # --------------------------------------------------------------------------- #
 # Optimized execution: blockhash already cached, keep-alive send, 50ms confirm
 # --------------------------------------------------------------------------- #
-def execute_fast(rpc: FastRpc, kp: Keypair, bhc: BlockhashCache) -> dict | None:
+def execute_fast(rpc: FastRpc, kp: Keypair, bhc: BlockhashCache, nonce: int = 0) -> dict | None:
     pk = kp.pubkey()
     t0 = time.time()
     bh = bhc.get()                                   # cached — no network wait
-    ix = transfer(TransferParams(from_pubkey=pk, to_pubkey=pk, lamports=1000))
+    # Vary the amount per call so every transaction has a UNIQUE signature.
+    # Without this, identical txs share a signature and a re-send just re-reads
+    # an already-confirmed status (~30ms) — a fake "fast" landing. With a unique
+    # nonce, each cycle is a genuinely new transaction that must really confirm.
+    ix = transfer(TransferParams(from_pubkey=pk, to_pubkey=pk, lamports=1000 + nonce))
     msg = MessageV0.try_compile(pk, [ix], [], Hash.from_string(bh))
     tx = VersionedTransaction(msg, [kp])
     t1 = time.time()                                 # build+sign done
@@ -236,7 +251,7 @@ def main() -> None:
                 g = best_gap()
                 print(f"[mainnet] best live gap: {g['gap_pct']:.3f}%" if g
                       else "[mainnet] detection rate-limited")
-            r = execute_fast(rpc, kp, bhc)
+            r = execute_fast(rpc, kp, bhc, nonce=i)
             if r:
                 lat.append(r["total_ms"])
                 print(f"  build+sign {r['build_ms']:.0f}ms | submit {r['submit_ms']:.0f}ms | "
@@ -245,11 +260,14 @@ def main() -> None:
         bhc.stop()
 
     if lat:
+        lat_sorted = sorted(lat)
+        p90 = lat_sorted[min(len(lat_sorted) - 1, int(0.9 * len(lat_sorted)))]
         print("\n" + "=" * 70)
-        print(f"Optimized average landing time: {sum(lat)/len(lat):.0f} ms over {len(lat)} tx")
-        print(f"  best cycle: {min(lat):.0f} ms")
-        print("Compare to your Stage 2 baseline (~936ms). Most of the win comes from")
-        print("the cached blockhash (build ~0ms) and 50ms confirm polling.")
+        print(f"Landing latency over {len(lat)} GENUINE tx (unique signatures):")
+        print(f"  min {min(lat):.0f}ms | median {statistics.median(lat):.0f}ms | "
+              f"mean {statistics.mean(lat):.0f}ms | p90 {p90:.0f}ms")
+        print("These are real fresh landings now — the old ~30ms 'cycles' were a")
+        print("duplicate-signature artifact, which this version fixes.")
         print("Reality check: pros land in-block at <20ms via co-located TPU/Jito and")
         print("win a fee auction. Even this optimized number does not cross into profit.")
         print("=" * 70)
