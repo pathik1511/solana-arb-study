@@ -1,0 +1,4 @@
+# Dev/test tooling (the runtime needs only requirements.txt).
+# Install with:  pip install -r requirements-dev.txt
+pytest>=7
+ruff>=0.4

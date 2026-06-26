@@ -1,5 +1,7 @@
 # Solana DEX Arbitrage — From Hype to Hard Numbers
 
+[![CI](https://github.com/pathik1511/solana-arb-study/actions/workflows/ci.yml/badge.svg)](https://github.com/pathik1511/solana-arb-study/actions/workflows/ci.yml)
+
 A staged, honest investigation into Solana DEX arbitrage bots: from the viral
 "turned <\$1 into a fortune" stories, down to a real, latency-optimized execution
 bot tested on devnet — and the empirical reasons retail arbitrage doesn't pay.
@@ -98,6 +100,20 @@ Stages 0 and 1 have **no third-party dependencies**.
 - `devnet_key.json` is git-ignored and must **never** be committed or shared.
 - Never put a real wallet's seed phrase or private key anywhere in this project.
 - The devnet bots refuse any RPC URL that isn't devnet.
+
+## Tests & CI
+
+The pure arbitrage math (AMM pricing, the profit-maximizing trade-size solver,
+gap detection) is unit-tested with `pytest` — no network required, so it runs
+fast and deterministically in CI.
+
+```bash
+pip install -r requirements-dev.txt
+pytest            # run the unit tests
+ruff check .      # lint
+```
+
+Every push runs `ruff` + `pytest` via GitHub Actions (`.github/workflows/ci.yml`).
 
 ## What this project is really about
 

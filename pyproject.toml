@@ -1,0 +1,16 @@
+# Tooling config for the project. Tests and lint are wired into CI (see
+# .github/workflows/ci.yml). No build backend is declared on purpose — this is a
+# collection of runnable scripts, not a published package.
+
+[tool.pytest.ini_options]
+pythonpath = ["."]          # lets tests import arb_bot from the repo root
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# Default-ish rule set: pyflakes (F) + the import/syntax-critical pycodestyle groups.
+select = ["E4", "E7", "E9", "F"]
