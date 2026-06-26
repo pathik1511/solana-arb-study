@@ -1,0 +1,63 @@
+name: Run Scanner
+
+# A click-to-run "UI" via the GitHub Actions tab — no command prompt needed.
+# Go to:  Actions -> "Run Scanner" -> "Run workflow", set the inputs, and run.
+# Results appear in the job log; the CSV is uploaded as a downloadable artifact.
+#
+# Note: only the READ-ONLY scanners run here. The devnet execution bot is not
+# included on purpose — it needs your funded devnet key, which is never in the repo.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tool:
+        description: "Which scanner to run"
+        type: choice
+        options:
+          - multi-token
+          - single-pair
+        default: multi-token
+      usd:
+        description: "Probe size in USD"
+        default: "20"
+      rounds:
+        description: "Scan rounds (multi-token only)"
+        default: "3"
+      tokens:
+        description: "Token basket, comma list (multi-token only)"
+        default: "SOL,BONK,JUP,WIF"
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Inputs are passed via env (never interpolated into the shell) to avoid
+      # any command-injection risk.
+      - name: Run multi-token scanner
+        if: ${{ inputs.tool == 'multi-token' }}
+        env:
+          USD: ${{ inputs.usd }}
+          ROUNDS: ${{ inputs.rounds }}
+          TOKENS: ${{ inputs.tokens }}
+        run: python scanner_multi.py --usd "$USD" --rounds "$ROUNDS" --tokens "$TOKENS"
+
+      - name: Run single-pair scanner
+        if: ${{ inputs.tool == 'single-pair' }}
+        env:
+          USD: ${{ inputs.usd }}
+        run: python live_scanner.py --usd "$USD" --once
+
+      - name: Upload opportunities CSV
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opportunities-csv
+          path: logs/opportunities.csv
+          if-no-files-found: ignore

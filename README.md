@@ -101,6 +101,19 @@ Stages 0 and 1 have **no third-party dependencies**.
 - Never put a real wallet's seed phrase or private key anywhere in this project.
 - The devnet bots refuse any RPC URL that isn't devnet.
 
+## Run it from the browser (no install)
+
+The read-only scanners can be run straight from GitHub — no clone, no terminal:
+
+1. Open the **Actions** tab → **Run Scanner** → **Run workflow**.
+2. Pick the tool (multi-token or single-pair), set the probe size / rounds / token
+   basket, and click **Run workflow**.
+3. Watch the ranked gaps in the job log, and download the `opportunities-csv`
+   artifact from the run summary.
+
+Only the read-only scanners run in the cloud — the devnet execution bot is
+deliberately excluded, since it needs a funded key that never belongs in a repo.
+
 ## Tests & CI
 
 The pure arbitrage math (AMM pricing, the profit-maximizing trade-size solver,
