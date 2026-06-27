@@ -1,3 +1,4 @@
-# Dashboard dependency (pulls in pandas automatically).
+# Dashboard dependencies (pulls in pandas automatically).
 # Install with:  .\.venv\Scripts\python.exe -m pip install -r requirements-ui.txt
 streamlit>=1.30
+plotly>=5.18

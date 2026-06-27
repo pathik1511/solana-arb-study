@@ -12,10 +12,10 @@ if not exist ".venv\Scripts\python.exe" (
   exit /b 1
 )
 
-".venv\Scripts\python.exe" -c "import streamlit" 2>nul
+".venv\Scripts\python.exe" -c "import streamlit, plotly" 2>nul
 if errorlevel 1 (
-  echo Installing the dashboard dependency ^(one-time^)...
-  ".venv\Scripts\python.exe" -m pip install streamlit
+  echo Installing dashboard dependencies ^(one-time^)...
+  ".venv\Scripts\python.exe" -m pip install -r requirements-ui.txt
 )
 
 echo.
