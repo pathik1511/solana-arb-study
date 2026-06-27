@@ -21,6 +21,9 @@ logs/
 .pytest_cache/
 .ruff_cache/
 
+# Local scan history database
+*.db
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db

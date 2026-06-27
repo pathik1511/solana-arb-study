@@ -19,6 +19,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import scanner_multi as sm
+import store
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ACCENT = "#00e0c6"
@@ -249,7 +250,8 @@ def run_script(args, timeout, label):
             return partial + f"\n[stopped after {timeout}s timeout]"
 
 
-scanner_tab, map_tab, tools_tab = st.tabs(["📡 Live Scanner", "🌐 3D Map", "🛠️ Run Tools"])
+scanner_tab, map_tab, history_tab, tools_tab = st.tabs(
+    ["📡 Live Scanner", "🌐 3D Map", "📜 History", "🛠️ Run Tools"])
 
 # --------------------------------------------------------------------------- #
 # Tab 1 — Live Scanner
@@ -324,6 +326,7 @@ with scanner_tab:
 
         st.session_state.prev_best = best
         st.session_state.last_results = results
+        store.record(results)
         st.caption("A visible gap rarely survives the real round-trip after fees and "
                    "slippage. Profitable rows are rare and fleeting — a study tool, "
                    "not a trading signal.")
@@ -348,7 +351,59 @@ with map_tab:
                    "Tip: use *Top N by volume* for a denser cloud.")
 
 # --------------------------------------------------------------------------- #
-# Tab 3 — Run Tools
+# Tab 3 — History & backtest (persistent, from SQLite)
+# --------------------------------------------------------------------------- #
+with history_tab:
+    st.subheader("📜 Persistent history & backtest")
+    s = store.stats()
+    if s["total_rows"] == 0:
+        st.info("No history yet. Run scans in the **Live Scanner** tab — every scan "
+                "is saved to `scans.db` and survives restarts.")
+    else:
+        h = pd.DataFrame(store.load(5000),
+                         columns=["ts", "symbol", "n_dex", "comparable",
+                                  "buy_dex", "sell_dex", "gap_pct", "net"])
+        h["ts"] = pd.to_datetime(h["ts"])
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Rows recorded", f"{s['total_rows']:,}")
+        c2.metric("Comparable signals", f"{s['comparable']:,}")
+        c3.metric("Ever profitable", f"{s['profitable']:,}")
+        c4.metric("P&L if you traded all", f"${s['pnl_if_traded_all']:.2f}",
+                  delta=f"winners-only ${s['pnl_if_winners_only']:.2f}")
+        st.caption(f"Spans {s['first']} → {s['last']}")
+
+        gtime = (h.dropna(subset=["gap_pct"])
+                  .assign(t=h["ts"].dt.strftime("%m-%d %H:%M:%S"))
+                  .groupby("t")["gap_pct"].max())
+        st.markdown("##### Best gap over time (persisted)")
+        st.line_chart(gtime, height=240)
+
+        comp = h[h["comparable"] == 1].dropna(subset=["net"]).sort_values("ts")
+        if not comp.empty:
+            cum = comp["net"].cumsum()
+            cum.index = comp["ts"].dt.strftime("%m-%d %H:%M:%S")
+            st.markdown("##### Backtest: cumulative P&L if you traded every signal")
+            st.area_chart(cum, height=240, color="#ff6b6b")
+
+        wins = h[(h["net"].notna()) & (h["net"] > 0)]
+        if wins.empty:
+            st.success("Backtest verdict: **not a single recorded gap survived the "
+                       "round-trip as a profit.** This is the honest, accumulated result.")
+        else:
+            st.markdown("##### Profitable signals recorded")
+            st.dataframe(wins[["ts", "symbol", "gap_pct", "buy_dex", "sell_dex", "net"]],
+                         use_container_width=True, hide_index=True)
+
+        d1, d2 = st.columns(2)
+        d1.download_button("⬇ Download history (CSV)", h.to_csv(index=False).encode(),
+                           "history.csv", "text/csv", use_container_width=True)
+        if d2.button("🗑 Clear history", use_container_width=True):
+            store.clear()
+            st.rerun()
+
+# --------------------------------------------------------------------------- #
+# Tab 4 — Run Tools
 # --------------------------------------------------------------------------- #
 with tools_tab:
     st.subheader("Run any tool with a button — no terminal")
