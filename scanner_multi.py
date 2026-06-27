@@ -55,6 +55,35 @@ class RateLimited(Exception):
     pass
 
 
+# Jupiter Token API V2 — top tokens by 24h organic score (max 100 per call).
+TOP_TOKENS_API = "https://lite-api.jup.ag/tokens/v2/toporganicscore/24h"
+
+
+def fetch_top_tokens(n: int = 25) -> dict:
+    """Return {symbol: (mint, decimals)} for the top-N live Solana tokens.
+
+    Skips the USDC numeraire and de-dupes colliding symbols. Falls back to the
+    curated TOKENS basket on any failure so the scanner never hard-crashes.
+    """
+    n = max(1, min(n, 100))
+    url = f"{TOP_TOKENS_API}?limit={n}"
+    # This endpoint rejects the default urllib User-Agent (403), so set a real one.
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            data = json.loads(r.read())
+    except Exception:
+        return dict(TOKENS)
+    out: dict[str, tuple[str, int]] = {}
+    for t in data:
+        mint, sym, dec = t.get("id"), t.get("symbol"), t.get("decimals")
+        if not mint or mint == USDC or sym is None or dec is None:
+            continue
+        key = sym if sym not in out else f"{sym}.{mint[:4]}"  # de-dup symbols
+        out[key] = (mint, dec)
+    return out or dict(TOKENS)
+
+
 def quote(in_mint, out_mint, amount, dex):
     params = {"inputMint": in_mint, "outputMint": out_mint, "amount": str(amount),
               "slippageBps": "50", "dexes": dex, "onlyDirectRoutes": "true"}
@@ -71,9 +100,10 @@ def quote(in_mint, out_mint, amount, dex):
         return None
 
 
-def scan_token(symbol: str, usd: float) -> dict:
+def scan_token(symbol: str, usd: float, tokens: dict | None = None) -> dict:
     """Probe one token across DEXs; return its best cross-DEX round-trip edge."""
-    mint, _dec = TOKENS[symbol]
+    tokens = tokens or TOKENS
+    mint, _dec = tokens[symbol]
     usdc_base = int(usd * 10**USDC_DECIMALS)
 
     # 1. Per-DEX price: token received for a fixed USDC probe (more = cheaper token).
@@ -93,7 +123,7 @@ def scan_token(symbol: str, usd: float) -> dict:
     gap_pct = (tok_out[cheap] / tok_out[dear] - 1) * 100
 
     # 2. Real round trip: buy on cheap DEX, sell those tokens on dear DEX.
-    usdc_back = quote(TOKENS[symbol][0], USDC, tok_out[cheap], dear)
+    usdc_back = quote(mint, USDC, tok_out[cheap], dear)
     time.sleep(REQUEST_SPACING_S)
     net = None
     if usdc_back:
@@ -116,11 +146,11 @@ def log_rows(rows: list[dict]):
                             f"{r['net']:.4f}" if r["net"] is not None else ""])
 
 
-def run_round(usd: float, symbols: list[str]):
+def run_round(usd: float, symbols: list[str], tokens: dict | None = None):
     results = []
     for sym in symbols:
         try:
-            results.append(scan_token(sym, usd))
+            results.append(scan_token(sym, usd, tokens))
         except RateLimited:
             print(f"  {sym}: rate-limited, backing off 15s...")
             time.sleep(15)
@@ -147,19 +177,30 @@ def main():
     p.add_argument("--interval", type=float, default=6.0)
     p.add_argument("--once", action="store_true")
     p.add_argument("--tokens", type=str, default="", help="comma list, e.g. SOL,BONK")
+    p.add_argument("--top", type=int, default=0,
+                   help="scan the top-N live tokens by volume instead of the basket (max 100)")
     args = p.parse_args()
 
-    symbols = [s.strip().upper() for s in args.tokens.split(",") if s.strip()] or list(TOKENS)
-    bad = [s for s in symbols if s not in TOKENS]
-    if bad:
-        raise SystemExit(f"Unknown tokens: {bad}. Known: {list(TOKENS)}")
+    if args.top > 0:
+        token_map = fetch_top_tokens(args.top)
+        symbols = list(token_map)
+        print(f"Fetched top {len(symbols)} live tokens by 24h volume.")
+    else:
+        token_map = TOKENS
+        symbols = [s.strip().upper() for s in args.tokens.split(",") if s.strip()] or list(TOKENS)
+        bad = [s for s in symbols if s not in TOKENS]
+        if bad:
+            raise SystemExit(f"Unknown tokens: {bad}. Known: {list(TOKENS)}")
 
     print("Stage B — Multi-Token Cross-DEX Scanner (read-only)")
-    print(f"Basket: {', '.join(symbols)} | probe ${args.usd:.2f} | logging to logs/opportunities.csv\n")
+    print(f"Scanning {len(symbols)} tokens | probe ${args.usd:.2f} | logging to logs/opportunities.csv")
+    if len(symbols) > 30:
+        print("NOTE: large baskets hit the free API's rate limit — expect slow, throttled scans.")
+    print()
 
     rounds = 1 if args.once else args.rounds
     for i in range(rounds):
-        run_round(args.usd, symbols)
+        run_round(args.usd, symbols, token_map)
         if not args.once and i < rounds - 1:
             time.sleep(args.interval)
     print(f"\nLogged to {os.path.relpath(LOGFILE)}. Open it in Excel to chart gaps over time.")

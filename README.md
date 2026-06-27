@@ -101,6 +101,20 @@ Stages 0 and 1 have **no third-party dependencies**.
 - Never put a real wallet's seed phrase or private key anywhere in this project.
 - The devnet bots refuse any RPC URL that isn't devnet.
 
+## Interactive dashboard
+
+A Streamlit dashboard wraps the scanner in a point-and-click UI — sliders for
+probe size, a token picker, a ranked results table, a gap bar chart, and a
+"best gap over time" line chart with optional auto-refresh.
+
+```bash
+.\.venv\Scripts\python.exe -m pip install -r requirements-ui.txt
+.\.venv\Scripts\python.exe -m streamlit run dashboard.py
+```
+
+Or on Windows just double-click **`run_dashboard.bat`** (it installs Streamlit on
+first run and opens the dashboard in your browser).
+
 ## Run it from the browser (no install)
 
 The read-only scanners can be run straight from GitHub — no clone, no terminal:
